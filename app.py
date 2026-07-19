@@ -43,9 +43,10 @@ st.markdown("""
 
 TABLE_NAME = "Health Project Framing"
 
-positive_form = "https://forms.office.com/pages/responsepage.aspx?id=DQSIkWdsW0yxEjajBLZtrQAAAAAAAAAAAAMAABWgDfdUREc3Q1hWQTQ5MlZBNEgxRTNPUUFVMkVTTi4u&origin=lprLink&route=shorturl"
-negative_form = "https://forms.office.com/pages/responsepage.aspx?id=DQSIkWdsW0yxEjajBLZtrQAAAAAAAAAAAAMAABWgDfdUMkVOVjRYMThIMllRWVZFT0xUN1RUWEM4Ni4u&origin=lprLink&route=shorturl"
-neutral_form = "https://forms.office.com/pages/responsepage.aspx?id=DQSIkWdsW0yxEjajBLZtrQAAAAAAAAAAAAMAABWgDfdUM1Q4VU9JNjQxWE9KSVI5UlgzMFBCV0dJRy4u&origin=lprLink&route=shorturl"
+# Microsoft Form Links
+positive_form = "https://forms.office.com/e/ZGdebwL9g7?origin=lprLink"
+negative_form = "https://forms.office.com/e/ZNjKt7Ww24?origin=lprLink"
+neutral_form = "https://forms.office.com/e/PJtM9MEEzU?origin=lprLink"
 
 form_links = {
     "Positive": positive_form,
