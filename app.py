@@ -27,17 +27,6 @@ st.markdown("""
     color: #555555;
     margin-bottom: 2rem;
 }
-.participant-code {
-    background-color: #f0f7ff;
-    border: 2px solid #1f77b4;
-    border-radius: 10px;
-    padding: 18px;
-    text-align: center;
-    font-size: 1.7rem;
-    font-weight: bold;
-    letter-spacing: 2px;
-    margin: 15px 0;
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -75,14 +64,11 @@ def normalise_email(email):
 
 def validate_email(email):
     email = normalise_email(email)
-
     pattern = r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$"
-
     return bool(re.fullmatch(pattern, email))
 
 def create_email_hash(email):
     normalised_email = normalise_email(email)
-
     private_key = st.secrets["security"]["email_hash_key"].encode("utf-8")
 
     return hmac.new(
@@ -93,24 +79,17 @@ def create_email_hash(email):
 
 def generate_participant_code():
     characters = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-
     random_part = "".join(
         secrets.choice(characters)
         for _ in range(8)
     )
-
     return f"DH-{random_part}"
 
 def get_assignment_by_code(participant_code):
     response = (
         supabase.table(TABLE_NAME)
-        .select(
-            "participant_code, assigned_condition, status"
-        )
-        .eq(
-            "participant_code",
-            participant_code.strip().upper()
-        )
+        .select("participant_code, assigned_condition, status")
+        .eq("participant_code", participant_code.strip().upper())
         .limit(1)
         .execute()
     )
@@ -157,32 +136,29 @@ def create_or_retrieve_assignment(email):
             raise error
 
     raise RuntimeError(
-        "A unique participant code could not be generated."
+        "A unique survey assignment could not be generated."
     )
 
 def save_assignment_to_session(assignment):
     st.session_state.participant_code = assignment["participant_code"]
     st.session_state.assigned_condition = assignment["assigned_condition"]
     st.session_state.assignment_status = assignment["status"]
-    st.session_state.was_existing = assignment.get(
-        "was_existing",
-        False
-    )
+    st.session_state.was_existing = assignment.get("was_existing", False)
 
 def restore_assignment_from_url():
-    participant_code = st.query_params.get("code", "")
+    assignment_code = st.query_params.get("assignment", "")
 
-    if not participant_code:
+    if not assignment_code:
         return False
 
     try:
-        assignment = get_assignment_by_code(participant_code)
+        assignment = get_assignment_by_code(assignment_code)
     except Exception:
         return False
 
     if not assignment:
         try:
-            del st.query_params["code"]
+            del st.query_params["assignment"]
         except Exception:
             pass
 
@@ -198,7 +174,6 @@ def restore_assignment_from_url():
     return True
 
 def display_assigned_survey():
-    participant_code = st.session_state.participant_code
     assigned_condition = st.session_state.assigned_condition
     assignment_status = st.session_state.get(
         "assignment_status",
@@ -214,19 +189,13 @@ def display_assigned_survey():
             "This email address has already been used to complete the study. "
             "Thank you for taking part."
         )
-
-        st.info(
-            f"Your participant code was: {participant_code}"
-        )
-
         return
 
     if assignment_status == "excluded":
         st.warning(
-            "This participant assignment is currently unavailable. "
+            "This survey assignment is currently unavailable. "
             "Please contact the researcher for assistance."
         )
-
         return
 
     assigned_form = form_links.get(assigned_condition)
@@ -236,40 +205,22 @@ def display_assigned_survey():
             "The assigned survey could not be found. "
             "Please contact the researcher."
         )
-
         return
 
     if was_existing:
         st.info(
             "A survey was previously assigned to this email address. "
-            "Your original participant code and survey have been restored."
+            "Your original assigned survey has been restored."
         )
     else:
         st.success(
             "Your survey has been assigned successfully."
         )
 
-    st.markdown("### Your participant code")
-
-    st.markdown(
-        f'<div class="participant-code">{participant_code}</div>',
-        unsafe_allow_html=True
+    st.write(
+        "Please use the button below to open your assigned questionnaire. "
+        "Complete and submit the questionnaire only once."
     )
-
-    st.warning(
-        "Copy or write down this code. You must enter it exactly "
-        "as shown in the first question of the Microsoft Form."
-    )
-
-    st.markdown("""
-**Before opening the survey:**
-
-1. Copy the participant code displayed above.
-2. Open your assigned survey using the button below.
-3. Enter the code into the first question of the form.
-4. Complete and submit the survey only once.
-5. Do not share your code or survey link with another person.
-""")
 
     st.link_button(
         "Open My Assigned Survey",
@@ -279,8 +230,8 @@ def display_assigned_survey():
     )
 
     st.caption(
-        "Opening the survey does not automatically submit a response. "
-        "You must complete and submit the Microsoft Form."
+        "Opening the questionnaire does not automatically submit a response. "
+        "You must complete the Microsoft Form and select Submit."
     )
 
 if "participant_code" not in st.session_state:
@@ -343,7 +294,7 @@ with st.expander(
         "take part and will not experience any penalty or loss of "
         "benefit if you choose not to participate. You may stop "
         "completing the study at any point before submitting your "
-        "survey response."
+        "questionnaire response."
     )
 
     st.markdown("### What will I have to do?")
@@ -352,7 +303,7 @@ with st.expander(
         "You will read a short scenario about a digital health portal "
         "and answer questions about your views of the portal and your "
         "willingness to share personal health data. You will also "
-        "answer a small number of demographic questions. The survey "
+        "answer a small number of demographic questions. The questionnaire "
         "should take approximately 10 to 15 minutes and should only "
         "be completed once."
     )
@@ -360,31 +311,22 @@ with st.expander(
     st.markdown("### Why is my email address requested?")
 
     st.write(
-        "Your email address is used only to prevent duplicate "
-        "participation and to restore your original participant code "
-        "and assigned survey if you return to this page. The email "
-        "address is converted into a secure coded identifier before "
-        "being stored. Your actual email address is not saved in the "
-        "study database or connected to your survey answers."
-    )
-
-    st.markdown("### Participant code")
-
-    st.write(
-        "After providing consent, you will receive a unique anonymous "
-        "participant code. You must enter this code into the first "
-        "question of the Microsoft Form. The code does not contain "
-        "your name or email address."
+        "Your email address is used only to prevent duplicate survey "
+        "assignments and to restore your original assigned questionnaire "
+        "if you refresh or return to this page. The email address is "
+        "converted into a secure coded identifier before being stored. "
+        "Your actual email address is not saved in the study database "
+        "or connected to your Microsoft Form responses."
     )
 
     st.markdown("### Confidentiality and data storage")
 
     st.write(
-        "Your name will not be requested. Your Microsoft Form "
-        "response will be connected only to your anonymous participant "
-        "code. Research data will be stored securely and handled in "
-        "accordance with relevant data-protection requirements and "
-        "Northumbria University research policies."
+        "Your name will not be requested. Your survey assignment record "
+        "and Microsoft Form responses will be stored separately. Research "
+        "data will be stored securely and handled in accordance with "
+        "relevant data-protection requirements and Northumbria University "
+        "research policies."
     )
 
     st.markdown("### Contact for further information")
@@ -459,16 +401,13 @@ if submitted:
 
             save_assignment_to_session(assignment)
 
-            st.query_params["code"] = assignment["participant_code"]
+            st.query_params["assignment"] = assignment["participant_code"]
 
             st.rerun()
 
-        except Exception as error:
+        except Exception:
             st.error(
                 "Your survey could not be assigned. Please refresh "
                 "the page and try again. If the problem continues, "
                 "contact the researcher."
             )
-
-            with st.expander("Technical details"):
-                st.code(str(error))
