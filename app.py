@@ -222,12 +222,24 @@ def display_assigned_survey():
         "Complete and submit the questionnaire only once."
     )
 
-    st.link_button(
-        "Open My Assigned Survey",
-        assigned_form,
-        type="primary",
-        use_container_width=True
-    )
+    col1, col2 = st.columns([3,1])
+
+    with col1:
+        st.link_button(
+            "Open My Assigned Survey",
+            assigned_form,
+            type="primary",
+            use_container_width=True,
+        )
+    
+    with col2:
+        if st.button("🏠", use_container_width=True):
+            st.query_params.clear()
+    
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+    
+            st.rerun()
 
     st.caption(
         "Opening the questionnaire does not automatically submit a response. "
@@ -358,6 +370,14 @@ with st.form("participant_access_form"):
             "Your email is converted into a secure identifier. "
             "The actual email address is not stored."
         )
+    )
+
+    st.info(
+         """
+        🔒 **Privacy Notice**
+
+        Your email address is **never stored**. It is securely converted into a unique hash that is used only to prevent duplicate participation and restore your assigned survey. Your survey responses remain anonymous.
+        """
     )
 
     st.markdown("### Informed consent")
