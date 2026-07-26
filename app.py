@@ -2,9 +2,12 @@ import hashlib
 import hmac
 import re
 import secrets
+
 import streamlit as st
 from supabase import create_client
 
+
+# Page configuration
 st.set_page_config(
     page_title="Digital Health Information Study",
     page_icon="🩺",
@@ -30,12 +33,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+
+# Database and Microsoft Forms
+
 TABLE_NAME = "Health Project Framing"
 
-# Microsoft Form Links
-positive_form = "https://forms.office.com/e/ZGdebwL9g7?origin=lprLink"
-negative_form = "https://forms.office.com/e/ZNjKt7Ww24?origin=lprLink"
-neutral_form = "https://forms.office.com/e/PJtM9MEEzU?origin=lprLink"
+positive_form = "https://forms.cloud.microsoft/r/g5cLZzVvq9?origin=lprLink"
+negative_form = "https://forms.cloud.microsoft/r/f42CQ5tWAZ?origin=lprLink"
+neutral_form = "https://forms.cloud.microsoft/r/f42CQ5tWAZ?origin=lprLink"
 
 form_links = {
     "Positive": positive_form,
@@ -43,49 +48,43 @@ form_links = {
     "Neutral": neutral_form
 }
 
-@st.cache_resource
+
+# Database connection
+
+@st.cache_resource(show_spinner=False)
 def connect_to_supabase():
     return create_client(
         st.secrets["supabase"]["url"],
         st.secrets["supabase"]["service_role_key"]
     )
 
-try:
-    supabase = connect_to_supabase()
-except Exception:
-    st.error(
-        "The study database could not be connected. "
-        "Please contact the researcher or try again later."
-    )
-    st.stop()
+
+# Email and participant assignment functions
 
 def normalise_email(email):
     return email.strip().lower()
 
+
 def validate_email(email):
-    email = normalise_email(email)
-    pattern = r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$"
-    return bool(re.fullmatch(pattern, email))
+    email_pattern = r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$"
+    return bool(re.fullmatch(email_pattern, normalise_email(email)))
+
 
 def create_email_hash(email):
-    normalised_email = normalise_email(email)
     private_key = st.secrets["security"]["email_hash_key"].encode("utf-8")
+    normalised_email = normalise_email(email).encode("utf-8")
+    return hmac.new(private_key, normalised_email, hashlib.sha256).hexdigest()
 
-    return hmac.new(
-        private_key,
-        normalised_email.encode("utf-8"),
-        hashlib.sha256
-    ).hexdigest()
 
 def generate_participant_code():
     characters = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-    random_part = "".join(
-        secrets.choice(characters)
-        for _ in range(8)
-    )
+    random_part = "".join(secrets.choice(characters) for _ in range(8))
     return f"DH-{random_part}"
 
+
 def get_assignment_by_code(participant_code):
+    supabase = connect_to_supabase()
+
     response = (
         supabase.table(TABLE_NAME)
         .select("participant_code, assigned_condition, status")
@@ -94,12 +93,11 @@ def get_assignment_by_code(participant_code):
         .execute()
     )
 
-    if response.data:
-        return response.data[0]
+    return response.data[0] if response.data else None
 
-    return None
 
 def create_or_retrieve_assignment(email):
+    supabase = connect_to_supabase()
     email_hash = create_email_hash(email)
 
     for _ in range(10):
@@ -108,10 +106,7 @@ def create_or_retrieve_assignment(email):
         try:
             response = supabase.rpc(
                 "assign_health_project_participant",
-                {
-                    "p_code": participant_code,
-                    "p_email_hash": email_hash
-                }
+                {"p_code": participant_code, "p_email_hash": email_hash}
             ).execute()
 
             if response.data:
@@ -127,23 +122,27 @@ def create_or_retrieve_assignment(email):
         except Exception as error:
             error_message = str(error).lower()
 
-            if (
-                "participant_code" in error_message
-                or "duplicate key" in error_message
-            ):
+            if "participant_code" in error_message or "duplicate key" in error_message:
                 continue
 
             raise error
 
-    raise RuntimeError(
-        "A unique survey assignment could not be generated."
-    )
+    raise RuntimeError("A unique survey assignment could not be generated.")
+
 
 def save_assignment_to_session(assignment):
     st.session_state.participant_code = assignment["participant_code"]
     st.session_state.assigned_condition = assignment["assigned_condition"]
     st.session_state.assignment_status = assignment["status"]
     st.session_state.was_existing = assignment.get("was_existing", False)
+
+
+def remove_invalid_assignment_parameter():
+    try:
+        del st.query_params["assignment"]
+    except Exception:
+        pass
+
 
 def restore_assignment_from_url():
     assignment_code = st.query_params.get("assignment", "")
@@ -154,14 +153,11 @@ def restore_assignment_from_url():
     try:
         assignment = get_assignment_by_code(assignment_code)
     except Exception:
+        remove_invalid_assignment_parameter()
         return False
 
     if not assignment:
-        try:
-            del st.query_params["assignment"]
-        except Exception:
-            pass
-
+        remove_invalid_assignment_parameter()
         return False
 
     save_assignment_to_session({
@@ -173,81 +169,57 @@ def restore_assignment_from_url():
 
     return True
 
+
+# Assigned questionnaire page
 def display_assigned_survey():
     assigned_condition = st.session_state.assigned_condition
-    assignment_status = st.session_state.get(
-        "assignment_status",
-        "assigned"
-    )
-    was_existing = st.session_state.get(
-        "was_existing",
-        False
-    )
+    assignment_status = st.session_state.get("assignment_status", "assigned")
+    was_existing = st.session_state.get("was_existing", False)
 
     if assignment_status == "completed":
-        st.success(
-            "This email address has already been used to complete the study. "
-            "Thank you for taking part."
-        )
+        st.success("This email address has already been used to complete the study. Thank you for taking part.")
         return
 
     if assignment_status == "excluded":
-        st.warning(
-            "This survey assignment is currently unavailable. "
-            "Please contact the researcher for assistance."
-        )
+        st.warning("This questionnaire assignment is currently unavailable. Please contact the researcher for assistance.")
         return
 
     assigned_form = form_links.get(assigned_condition)
 
     if not assigned_form:
-        st.error(
-            "The assigned survey could not be found. "
-            "Please contact the researcher."
-        )
+        st.error("The assigned questionnaire could not be found. Please contact the researcher.")
         return
 
     if was_existing:
-        st.info(
-            "A survey was previously assigned to this email address. "
-            "Your original assigned survey has been restored."
-        )
+        st.info("A questionnaire was previously assigned to this email address. Your original questionnaire has been restored.")
     else:
-        st.success(
-            "Your survey has been assigned successfully."
-        )
+        st.success("Your questionnaire has been assigned successfully.")
 
     st.write(
-        "Please use the button below to open your assigned questionnaire. "
+        "Please select the button below to open your assigned questionnaire. "
         "Complete and submit the questionnaire only once."
     )
 
-    col1, col2 = st.columns([3,1])
-
-    with col1:
-        st.link_button(
-            "Open My Assigned Survey",
-            assigned_form,
-            type="primary",
-            use_container_width=True,
-        )
-    
-    with col2:
-        if st.button("🏠", use_container_width=True):
-            st.query_params.clear()
-    
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-    
-            st.rerun()
+    st.link_button(
+        "Open My Assigned Questionnaire",
+        assigned_form,
+        type="primary",
+        use_container_width=True
+    )
 
     st.caption(
-        "Opening the questionnaire does not automatically submit a response. "
+        "Opening the questionnaire does not automatically submit your response. "
         "You must complete the Microsoft Form and select Submit."
     )
 
+
+# Restore an existing browser assignment
+
 if "participant_code" not in st.session_state:
     restore_assignment_from_url()
+
+
+# Page heading
 
 st.markdown(
     '<div class="main-header">Digital Health Information Study</div>',
@@ -255,110 +227,81 @@ st.markdown(
 )
 
 st.markdown(
-    '<div class="sub-header">'
-    'Understanding how people respond to information provided by '
-    'digital health services'
-    '</div>',
+    '<div class="sub-header">Understanding how people respond to information '
+    'provided by digital health services</div>',
     unsafe_allow_html=True
 )
 
+
+# Show the assigned questionnaire if an assignment already exists
 if "participant_code" in st.session_state:
     display_assigned_survey()
     st.stop()
 
+
+# Participant Information Sheet
 st.info(
     "Thank you for your interest in this research. "
     "Please read the Participant Information Sheet before continuing."
 )
 
-with st.expander(
-    "Participant Information Sheet: Please click to open and read",
-    expanded=False
-):
-    st.markdown("### What is the purpose of the study?")
-
-    st.write(
-        "This study examines how people interpret information provided "
-        "by digital health services and how this information affects "
-        "their views about using such services. You will be shown a "
-        "short scenario about a digital health portal and asked to "
-        "provide your views about it."
-    )
-
-    st.markdown("### Why have I been invited to take part?")
-
-    st.write(
-        "You may take part if you meet all the following criteria:"
-    )
-
+with st.expander("Participant Information Sheet: Please click to open and read"):
     st.markdown("""
+### What is the purpose of the study?
+
+This study examines how people interpret information provided by digital health services and how this information affects their views about using such services. You will be shown a short scenario about a digital health portal and asked to provide your views about it.
+
+### Why have I been invited to take part?
+
+You may take part if:
+
 - You are aged 18 years or above.
 - You can read and understand English.
 - You are capable of making your own decisions.
 - You have experience using at least one digital service, such as social media, a health application or online banking.
-- You have internet access to complete the survey.
+- You have internet access to complete the questionnaire.
+
+### Do I have to take part?
+
+Participation is voluntary. You are under no obligation to take part and will not experience any penalty or loss of benefit if you choose not to participate. You may leave the study at any time before submitting your questionnaire response.
+
+### What will I have to do?
+
+You will read a short scenario about a digital health portal and answer questions about your views of the portal and your willingness to share personal health data. You will also answer a small number of demographic questions. The questionnaire should take approximately 10 minutes and should only be completed once.
 """)
 
-    st.markdown("### Do I have to take part?")
-
-    st.write(
-        "Participation is voluntary. You are under no obligation to "
-        "take part and will not experience any penalty or loss of "
-        "benefit if you choose not to participate. You may stop "
-        "completing the study at any point before submitting your "
-        "questionnaire response."
+    st.info(
+        "There are no right or wrong answers. Please answer each question "
+        "honestly based on your own views and reactions to the scenario."
     )
 
-    st.markdown("### What will I have to do?")
+    st.markdown("""
+### Email privacy and confidentiality
 
-    st.write(
-        "You will read a short scenario about a digital health portal "
-        "and answer questions about your views of the portal and your "
-        "willingness to share personal health data. You will also "
-        "answer a small number of demographic questions. The questionnaire "
-        "should take approximately 10 to 15 minutes and should only "
-        "be completed once."
-    )
+Your email address is requested only to prevent duplicate questionnaire assignments and to restore your original questionnaire if you refresh or return to the application. It is converted into a secure coded identifier before being processed.
 
-    st.markdown("### Why is my email address requested?")
+Your actual email address is not stored in the study database, passed to Microsoft Forms or connected to your questionnaire responses. Your name and actual medical information will not be requested.
 
-    st.write(
-        "Your email address is used only to prevent duplicate survey "
-        "assignments and to restore your original assigned questionnaire "
-        "if you refresh or return to this page. The email address is "
-        "converted into a secure coded identifier before being stored. "
-        "Your actual email address is not saved in the study database "
-        "or connected to your Microsoft Form responses."
-    )
+The questionnaire responses will be stored securely and accessed only by the researcher and authorised members of the research team.
 
-    st.markdown("### Confidentiality and data storage")
+### Contact for further information
 
-    st.write(
-        "Your name will not be requested. Your survey assignment record "
-        "and Microsoft Form responses will be stored separately. Research "
-        "data will be stored securely and handled in accordance with "
-        "relevant data-protection requirements and Northumbria University "
-        "research policies."
-    )
+**Researcher:** shekinah.ikilizi@northumbria.ac.uk  
+**Supervisor:** m.cholerzynski@northumbria.ac.uk
+""")
 
-    st.markdown("### Contact for further information")
 
-    st.write(
-        "**Researcher:** shekinah.ikilizi@northumbria.ac.uk"
-    )
-
-    st.write(
-        "**Supervisor:** m.cholerzynski@northumbria.ac.uk"
-    )
+# Eligibility, email and consent form
 
 st.divider()
 
-with st.form("participant_access_form"):
-    st.markdown("### Eligibility")
+with st.form("participant_access_form", clear_on_submit=False):
+    st.markdown("### Eligibility confirmation")
 
     eligibility = st.checkbox(
-        "I confirm that I am aged 18 years or above, can understand "
-        "English, and meet the participation criteria listed above."
+        "I confirm that I am aged 18 years or above, can read and understand "
+        "English, and meet the participation criteria listed in the "
+        "Participant Information Sheet."
     )
 
     st.markdown("### Email address")
@@ -366,68 +309,47 @@ with st.form("participant_access_form"):
     participant_email = st.text_input(
         "Enter your email address",
         placeholder="example@email.com",
-        help=(
-            "Your email is converted into a secure identifier. "
-            "The actual email address is not stored."
-        )
-    )
-
-    st.info(
-         """
-        🔒 **Privacy Notice**
-
-        Your email address is **never stored**. It is securely converted into a unique hash that is used only to prevent duplicate participation and restore your assigned survey. Your survey responses remain anonymous.
-        """
+        help="Used only to prevent duplicate assignments and restore your original questionnaire."
     )
 
     st.markdown("### Informed consent")
 
     consent = st.checkbox(
-        "I confirm that I have read and understood the Participant "
-        "Information Sheet. I understand that participation is "
-        "voluntary, and I agree to take part in this study."
+        "I confirm that I have read and understood the Participant Information "
+        "Sheet. I understand that participation is voluntary, that I may leave "
+        "before submitting my response, and I agree to take part in this study."
     )
 
     submitted = st.form_submit_button(
-        "Continue to My Survey",
+        "Continue to My Questionnaire",
         type="primary",
         use_container_width=True
     )
 
+
+# Form validation and questionnaire allocation
+
 if submitted:
     if not eligibility:
-        st.error(
-            "You must confirm that you meet the eligibility criteria."
-        )
+        st.error("Please confirm that you meet the eligibility criteria.")
 
     elif not validate_email(participant_email):
-        st.error(
-            "Please enter a valid email address."
-        )
+        st.error("Please enter a valid email address.")
 
     elif not consent:
-        st.error(
-            "You must provide informed consent before continuing."
-        )
+        st.error("Please provide informed consent before continuing.")
 
     else:
         try:
-            with st.spinner(
-                "Creating or retrieving your survey assignment..."
-            ):
-                assignment = create_or_retrieve_assignment(
-                    participant_email
-                )
+            with st.spinner("Preparing your questionnaire..."):
+                assignment = create_or_retrieve_assignment(participant_email)
 
             save_assignment_to_session(assignment)
-
             st.query_params["assignment"] = assignment["participant_code"]
-
             st.rerun()
 
         except Exception:
             st.error(
-                "Your survey could not be assigned. Please refresh "
-                "the page and try again. If the problem continues, "
-                "contact the researcher."
+                "Your questionnaire could not be assigned. Please refresh the "
+                "page and try again. If the problem continues, contact the researcher."
             )
