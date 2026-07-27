@@ -40,7 +40,7 @@ TABLE_NAME = "Health Project Framing"
 
 positive_form = "https://forms.cloud.microsoft/r/g5cLZzVvq9?origin=lprLink"
 negative_form = "https://forms.cloud.microsoft/r/f42CQ5tWAZ?origin=lprLink"
-neutral_form = "https://forms.cloud.microsoft/r/f42CQ5tWAZ?origin=lprLink"
+neutral_form = "https://forms.cloud.microsoft/r/pVefuYyf1M?origin=lprLink"
 
 form_links = {
     "Positive": positive_form,
